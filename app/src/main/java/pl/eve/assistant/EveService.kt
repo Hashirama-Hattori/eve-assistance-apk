@@ -73,6 +73,14 @@ class EveService : Service() {
             listenNow()
             return START_STICKY
         }
+        if (intent?.action == ACTION_SPEAK_TOGGLE || intent?.action == ACTION_REFRESH) {
+            if (intent.action == ACTION_SPEAK_TOGGLE) {
+                prefs.toggleSpeakOn()
+                EveBus.log(if (prefs.speakOn == "pc") "Odpowiedzi głosem na komputerze" else "Odpowiedzi głosem na telefonie")
+            }
+            if (running) notify(lastNotif)
+            return START_STICKY
+        }
         startForegroundCompat("Uruchamiam…")
         if (!running) start()
         return START_STICKY
@@ -208,7 +216,7 @@ class EveService : Service() {
                 val r = api.sendVoice(audio)
                 if (r.action == "stop") stopSpeaking()
                 if (r.user.isNotEmpty()) EveBus.log("Ty: ${r.user}")
-                if (r.text.isNotEmpty()) EveBus.log("EVE: ${r.text}")
+                if (r.text.isNotEmpty()) EveBus.log("EVE: ${r.text}" + if (r.spokenOn == "pc") "  (🖥 mówi na PC)" else "")
                 notify(r.text.ifEmpty { "Słucham – powiedz „Iwi”" })
                 if (r.audio != null) play(r.audio) else done()
             } catch (e: Exception) {
@@ -263,6 +271,8 @@ class EveService : Service() {
 
     // ---------- powiadomienie (wymagane dla usługi w tle) ----------
 
+    private var lastNotif = "Słucham – powiedz „Iwi”"
+
     private fun buildNotification(text: String): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL) == null) {
@@ -274,6 +284,9 @@ class EveService : Service() {
             PendingIntent.FLAG_IMMUTABLE)
         val talk = PendingIntent.getService(this, 2, Intent(this, EveService::class.java).setAction(ACTION_LISTEN_NOW),
             PendingIntent.FLAG_IMMUTABLE)
+        val where = PendingIntent.getService(this, 3, Intent(this, EveService::class.java).setAction(ACTION_SPEAK_TOGGLE),
+            PendingIntent.FLAG_IMMUTABLE)
+        lastNotif = text
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_eve)
             .setContentTitle("EVE")
@@ -282,6 +295,7 @@ class EveService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(0, "Mów", talk)
+            .addAction(0, if (prefs.speakOn == "pc") "Głos: PC" else "Głos: telefon", where)
             .addAction(0, "Wyłącz", stop)
             .build()
     }
@@ -312,6 +326,8 @@ class EveService : Service() {
         const val NOTIF_ID = 7
         const val ACTION_STOP = "pl.eve.STOP"
         const val ACTION_LISTEN_NOW = "pl.eve.LISTEN"
+        const val ACTION_SPEAK_TOGGLE = "pl.eve.SPEAK_TOGGLE"
+        const val ACTION_REFRESH = "pl.eve.REFRESH"
         @Volatile var instance: EveService? = null
         val isRunning get() = instance != null
     }

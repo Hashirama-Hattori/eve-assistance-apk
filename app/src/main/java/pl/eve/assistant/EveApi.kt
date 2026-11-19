@@ -11,7 +11,8 @@ import java.nio.ByteOrder
 /** Rozmowa z rdzeniem EVE (serwer na PC albo w chmurze). */
 class EveApi(private val prefs: Prefs) {
 
-    data class Reply(val user: String, val text: String, val audio: ByteArray?, val action: String?)
+    data class Reply(val user: String, val text: String, val audio: ByteArray?, val action: String?,
+                     val spokenOn: String = "phone")
 
     /** Wysyła nagranie (PCM 16 kHz mono) - EVE sama zamienia mowę na tekst i odpowiada. */
     fun sendVoice(pcm: ByteArray): Reply {
@@ -60,6 +61,7 @@ class EveApi(private val prefs: Prefs) {
         conn.readTimeout = 120000
         conn.setRequestProperty("X-Eve-Token", prefs.token)
         conn.setRequestProperty("X-Eve-Client", "app")
+        conn.setRequestProperty("X-Eve-Speak", prefs.speakOn)  // phone | pc
         return conn
     }
 
@@ -73,7 +75,8 @@ class EveApi(private val prefs: Prefs) {
         val audio = if (audioB64.isNotEmpty() && audioB64 != "null")
             android.util.Base64.decode(audioB64, android.util.Base64.DEFAULT) else null
         return Reply(j.optString("user"), j.optString("reply"), audio,
-            j.optString("action").takeIf { it.isNotEmpty() && it != "null" })
+            j.optString("action").takeIf { it.isNotEmpty() && it != "null" },
+            j.optString("spoken_on", "phone"))
     }
 
     companion object {

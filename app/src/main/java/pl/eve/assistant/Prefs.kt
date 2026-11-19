@@ -24,6 +24,18 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("fuzzy", true)
         set(v) = sp.edit().putBoolean("fuzzy", v).apply()
 
+    /** Gdzie EVE odpowiada głosem: "phone" (telefon) albo "pc" (głośniki komputera). */
+    var speakOn: String
+        get() = sp.getString("speak_on", "phone") ?: "phone"
+        set(v) = sp.edit().putString("speak_on", v).apply()
+
+    fun toggleSpeakOn(): String {
+        speakOn = if (speakOn == "pc") "phone" else "pc"
+        return speakOn
+    }
+
+    fun speakLabel(): String = if (speakOn == "pc") "🖥 Odpowiada: KOMPUTER" else "📱 Odpowiada: TELEFON"
+
     fun wakeList(): List<String> =
         wakeWords.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .sortedByDescending { it.length } // najpierw dłuższe ("i wi" przed "wi")

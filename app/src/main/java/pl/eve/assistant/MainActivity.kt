@@ -71,6 +71,14 @@ class MainActivity : AppCompatActivity() {
             if (!EveService.isRunning) { Toast.makeText(this, "Najpierw włącz nasłuch", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             startService(Intent(this, EveService::class.java).setAction(EveService.ACTION_LISTEN_NOW))
         }
+        val speakOn = findViewById<Button>(R.id.speakOn)
+        speakOn.text = prefs.speakLabel()
+        speakOn.setOnClickListener {
+            prefs.toggleSpeakOn()
+            speakOn.text = prefs.speakLabel()
+            addLog(if (prefs.speakOn == "pc") "Odpowiedzi głosem na komputerze" else "Odpowiedzi głosem na telefonie")
+            if (EveService.isRunning) startService(Intent(this, EveService::class.java).setAction(EveService.ACTION_REFRESH))
+        }
         findViewById<Button>(R.id.panel).setOnClickListener {
             startActivity(Intent(this, PanelActivity::class.java))
         }
@@ -95,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         synchronized(EveBus.history) { log.text = EveBus.history.joinToString("\n") }
         scrollDown()
         status.text = EveBus.lastStatus
+        findViewById<Button>(R.id.speakOn).text = prefs.speakLabel()  // mogło się zmienić z powiadomienia
         refreshToggle()
         EveBus.listener = { kind, text ->
             when (kind) {
