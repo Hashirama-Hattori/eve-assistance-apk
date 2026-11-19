@@ -166,14 +166,38 @@ class EveService : Service() {
         }
     }
 
-    /** Szuka słowa wywołania jako osobnego słowa. Zwraca (słowo, reszta zdania). */
+    /**
+     * Szuka wywołania. Najpierw dokładne słowa z ustawień, potem dopasowanie "po brzmieniu":
+     * polski model nie zna słowa "Iwi" i zapisuje je różnie ("i wi", "iwie", "ewy", "i wy", "hiwi"...).
+     * Sprawdzamy 1-2 pierwsze słowa zdania sklejone razem. Zwraca (co usłyszał, reszta zdania).
+     */
     private fun findWake(text: String): Pair<String, String>? {
         val t = " " + text.lowercase() + " "
         for (w in prefs.wakeList()) {
             val i = t.indexOf(" $w ")
             if (i >= 0) return w to t.substring(i + w.length + 2).trim()
         }
+        if (!prefs.fuzzyWake) return null
+        val words = text.lowercase().split(" ").filter { it.isNotBlank() }
+        // pomijamy grzecznościowe "hej"/"ok" na początku
+        val start = if (words.firstOrNull() in setOf("hej", "ej", "ok", "okej", "halo")) 1 else 0
+        for (take in 2 downTo 1) {
+            if (words.size < start + take) continue
+            val joined = words.subList(start, start + take).joinToString("")
+            if (soundsLikeIwi(joined)) {
+                return joined to words.drop(start + take).joinToString(" ")
+            }
+        }
         return null
+    }
+
+    private val iwiSound = Regex("^h?[iyje]{1,2}w[iyje]{1,3}[ji]?$")
+
+    private fun soundsLikeIwi(w: String): Boolean {
+        if (w.length < 3 || w.length > 6) return false
+        // "ewa", "iwo" itp. są zbyt częste w zwykłej mowie - nie traktujemy ich jako wywołania
+        if (w in setOf("ewa", "ewo", "ewę", "wie", "wiej", "iwo")) return false
+        return iwiSound.matches(w)
     }
 
     private fun send(audio: ByteArray) {

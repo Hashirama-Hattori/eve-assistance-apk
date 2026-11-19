@@ -19,11 +19,16 @@ class Prefs(context: Context) {
         get() = sp.getString("wake", DEFAULT_WAKE) ?: DEFAULT_WAKE
         set(v) = sp.edit().putString("wake", v).apply()
 
+    /** Dopasowanie "po brzmieniu" (i wi, iwie, ewy, i wy...). */
+    var fuzzyWake: Boolean
+        get() = sp.getBoolean("fuzzy", true)
+        set(v) = sp.edit().putBoolean("fuzzy", v).apply()
+
     fun wakeList(): List<String> =
         wakeWords.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
             .sortedByDescending { it.length } // najpierw dłuższe ("i wi" przed "wi")
 
     companion object {
-        const val DEFAULT_WAKE = "iwi, i wi, iwie, i wie, ewi, iwy, i wy, eve, iw, ewa, ewo"
+        const val DEFAULT_WAKE = "iwi, i wi, iwie, i wie, ewi, ewe, iwy, i wy, eve"
     }
 }
