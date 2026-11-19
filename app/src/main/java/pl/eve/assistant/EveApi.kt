@@ -59,6 +59,7 @@ class EveApi(private val prefs: Prefs) {
         conn.connectTimeout = 8000
         conn.readTimeout = 120000
         conn.setRequestProperty("X-Eve-Token", prefs.token)
+        conn.setRequestProperty("X-Eve-Client", "app")
         return conn
     }
 
