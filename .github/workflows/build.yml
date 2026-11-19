@@ -1,0 +1,53 @@
+name: Buduj EVE APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Model mowy Vosk (polski, ~50 MB)
+        run: |
+          set -e
+          curl -fsSL -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-pl-0.22.zip
+          unzip -q model.zip
+          mkdir -p app/src/main/assets
+          rm -rf app/src/main/assets/model-pl
+          mv vosk-model-small-pl-0.22 app/src/main/assets/model-pl
+          echo "pl-0.22" > app/src/main/assets/model-pl/uuid
+          du -sh app/src/main/assets/model-pl
+
+      - name: Budowanie
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Plik APK jako artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: EVE-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Wydanie "latest" (link do pobrania na telefon)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk EVE.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest EVE.apk --title "EVE – najnowsza wersja (build ${{ github.run_number }})" \
+            --notes "Pobierz EVE.apk na telefonie i zainstaluj. Nowe wersje instalują się na starą." --latest

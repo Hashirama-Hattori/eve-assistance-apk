@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="18dp"
+    android:background="@color/bg">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="E · V · E" android:textColor="@color/cyan" android:textSize="24sp" android:letterSpacing="0.3" />
+        <TextView android:id="@+id/version" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="@color/dim" android:textSize="11sp" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:textColor="@color/cyan2" android:textSize="15sp" android:text="Wyłączona" />
+    <TextView android:id="@+id/live" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textColor="@color/dim" android:textSize="12sp" android:minLines="1" android:maxLines="2" />
+
+    <Button android:id="@+id/toggle" style="@style/EveButton" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="Włącz nasłuch „Iwi”" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button android:id="@+id/talk" style="@style/EveButton" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:layout_marginEnd="6dp" android:text="Mów teraz" />
+        <Button android:id="@+id/panel" style="@style/EveButton" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Panel EVE" />
+    </LinearLayout>
+
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:layout_marginTop="8dp" android:background="@color/panel" android:padding="10dp">
+        <TextView android:id="@+id/log" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="@color/text" android:textSize="13sp" android:lineSpacingExtra="3dp" />
+    </ScrollView>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal"
+        android:gravity="center_vertical" android:layout_marginTop="6dp">
+        <EditText android:id="@+id/input" style="@style/EveField" android:layout_width="0dp" android:layout_weight="1"
+            android:hint="Napisz do EVE…" android:imeOptions="actionSend" />
+        <Button android:id="@+id/send" style="@style/EveButton" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="➤" />
+    </LinearLayout>
+
+    <TextView style="@style/EveLabel" android:text="ADRES EVE" />
+    <EditText android:id="@+id/server" style="@style/EveField" android:inputType="textUri"
+        android:hint="http://192.168.1.107:8000" />
+    <TextView style="@style/EveLabel" android:text="KOD DOSTĘPU" />
+    <EditText android:id="@+id/token" style="@style/EveField" android:inputType="textCapCharacters" android:hint="np. 4F9A1C" />
+    <TextView style="@style/EveLabel" android:text="SŁOWA WYWOŁANIA (tak słyszy je model, po przecinku)" />
+    <EditText android:id="@+id/wake" style="@style/EveField" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button android:id="@+id/save" style="@style/EveButton" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:layout_marginEnd="6dp" android:text="Zapisz i sprawdź" />
+        <Button android:id="@+id/resetWake" style="@style/EveButton" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="Domyślne słowa" />
+    </LinearLayout>
+</LinearLayout>
