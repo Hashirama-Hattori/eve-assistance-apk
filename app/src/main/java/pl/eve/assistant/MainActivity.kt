@@ -53,9 +53,16 @@ class MainActivity : AppCompatActivity() {
             addLog("Zapisano. Sprawdzam połączenie…")
             ui.launch {
                 val err = withContext(Dispatchers.IO) { EveApi(prefs).check() }
-                addLog(err?.let { "⚠ $it" } ?: "✔ Połączono z EVE")
+                addLog(err?.let { "⚠ $it – czy EVE jest włączona na PC?" } ?: "✔ Połączono z EVE")
+                if (err == null) {  // od razu pobieramy dane do pracy bez PC
+                    val store = LocalStore(this@MainActivity)
+                    val e2 = withContext(Dispatchers.IO) { store.pull(prefs).also { if (it == null) store.push(prefs) } }
+                    addLog(if (e2 == null) "✔ Pobrano dane do pracy bez PC – telefon poradzi sobie sam, gdy PC będzie wyłączony"
+                           else "⚠ Nie udało się pobrać danych do pracy bez PC ($e2) – zaktualizuj EVE na PC")
+                }
             }
         }
+        offlineInfo()
         findViewById<Button>(R.id.resetWake).setOnClickListener {
             wake.setText(Prefs.DEFAULT_WAKE)
         }
@@ -119,6 +126,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         askPermissions()
+    }
+
+    private fun offlineInfo() {
+        val store = LocalStore(this)
+        val t = store.lastSync
+        addLog(if (t > 0) "📱 Tryb bez PC gotowy (dane z ${java.text.SimpleDateFormat("d.MM HH:mm", java.util.Locale("pl")).format(java.util.Date(t))})"
+               else "📱 Tryb bez PC: jeszcze brak danych – włącz EVE na PC i kliknij „Zapisz i sprawdź”")
     }
 
     override fun onResume() {
