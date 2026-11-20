@@ -61,7 +61,7 @@ class EveApi(private val prefs: Prefs) {
         val conn = URL(prefs.serverUrl + path).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true
-        conn.connectTimeout = 8000
+        conn.connectTimeout = 3500   // szybko wiemy, że PC jest wyłączony -> EVE w telefonie
         conn.readTimeout = 120000
         conn.setRequestProperty("X-Eve-Token", prefs.token)
         conn.setRequestProperty("X-Eve-Client", "app")

@@ -55,6 +55,11 @@ class EveService : Service() {
     @Volatile private var resetRecognizer = false
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    // praca bez PC
+    private lateinit var store: LocalStore
+    private lateinit var phoneBrain: PhoneBrain
+    private var tts: android.speech.tts.TextToSpeech? = null
+    @Volatile private var pcOnline = true
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -62,7 +67,25 @@ class EveService : Service() {
         super.onCreate()
         prefs = Prefs(this)
         api = EveApi(prefs)
+        store = LocalStore(this)
+        phoneBrain = PhoneBrain(store, PhoneTools(this, store))
+        tts = android.speech.tts.TextToSpeech(this) { st ->
+            if (st == android.speech.tts.TextToSpeech.SUCCESS) tts?.language = java.util.Locale("pl", "PL")
+        }
         instance = this
+    }
+
+    /** Co 20 minut (i po każdym powrocie PC): świeże dane z PC + oddanie tego, co działo się bez niego. */
+    private fun syncLoop() = scope.launch {
+        while (running) {
+            val err = store.pull(prefs)
+            if (err == null) {
+                store.push(prefs)
+                if (!pcOnline) EveBus.log("🖥 PC znowu dostępny – wracam do pełnej EVE")
+                pcOnline = true
+            }
+            kotlinx.coroutines.delay(20 * 60_000L)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -99,6 +122,7 @@ class EveService : Service() {
                 EveBus.log("Słucham. Powiedz: „Iwi, …”")
                 notify("Słucham – powiedz „Iwi”")
                 Thread({ loop(m) }, "eve-mic").start()
+                syncLoop()
             },
             { e ->
                 EveBus.log("Błąd modelu mowy: ${e.message}")
@@ -289,6 +313,11 @@ class EveService : Service() {
                     return@launch
                 }
                 startConversation()         // każda rozmowa z EVE przedłuża czas do spoczynku
+                if (!pcOnline) {            // PC wrócił - oddajemy mu rozmowy z czasu bez niego
+                    pcOnline = true
+                    EveBus.log("🖥 PC znowu dostępny – wracam do pełnej EVE")
+                    scope.launch { if (store.pull(prefs) == null) store.push(prefs) }
+                }
                 if (r.action == "end_conversation") endConversation("na Twoje polecenie")
                 if (r.action == "stop") stopSpeaking()
                 if (r.user.isNotEmpty()) EveBus.log("Ty: ${r.user}")
@@ -300,12 +329,74 @@ class EveService : Service() {
                     r.spokenOn == "pc" -> main.postDelayed({ done() }, (r.speakSeconds * 1000).toLong())
                     else -> done()
                 }
+            } catch (e: java.io.IOException) {
+                // PC wyłączony / poza zasięgiem - EVE działa dalej w telefonie
+                if (pcOnline) EveBus.log("📱 PC niedostępny – działam w telefonie")
+                pcOnline = false
+                offline(audio, conversation, heard)
             } catch (e: Exception) {
                 EveBus.log("⚠ ${e.message}")
-                notify("Brak połączenia z EVE")
+                notify("Błąd EVE")
                 done()
             }
         }
+    }
+
+    // ---------- praca bez PC ----------
+
+    private fun transcribe(audio: ByteArray): String? {
+        val stt = store.sync?.optJSONObject("stt") ?: return null
+        val key = stt.optString("api_key")
+        if (key.isBlank()) return null
+        return try {
+            val r = Net.multipartAudio("https://api.openai.com/v1/audio/transcriptions", EveApi.pcmToWav(audio, 16000),
+                mapOf("model" to stt.optString("model", "gpt-4o-mini-transcribe"), "language" to "pl",
+                    "prompt" to "Rozmowa z asystentką EVE (Iwi, Edit, Jarvis). Spotify, playlista, polubione, pogoda, Gmail, kalendarz."),
+                mapOf("Authorization" to "Bearer $key"))
+            org.json.JSONObject(r).optString("text").trim().ifBlank { null }
+        } catch (e: Exception) { null }
+    }
+
+    private suspend fun offline(audio: ByteArray, conversation: Boolean, heard: String) {
+        if (!store.hasSync()) {
+            EveBus.log("⚠ PC niedostępny, a telefon nie ma jeszcze danych do pracy samodzielnej. Połącz się raz z PC (ta sama sieć Wi-Fi).")
+            notify("Brak połączenia z PC")
+            done(); return
+        }
+        val text = transcribe(audio) ?: heard.ifBlank { null }
+        if (text == null) { done(); return }
+        if (conversation && !phoneBrain.isForEve(text)) {
+            EveBus.heard("$text  (nie do mnie)")
+            busy = false
+            return
+        }
+        val low = text.lowercase()
+        if (Regex("^(stop|cisza|przestań|wystarczy|dość)[.!]?$").matches(low)) { stopSpeaking(); done(); return }
+        startConversation()
+        EveBus.log("Ty: $text")
+        if (Regex("(to wszystko|koniec rozmowy|kończymy|idź spać|dobranoc)").containsMatchIn(low)) {
+            endConversation("na Twoje polecenie"); speakLocal("Dobrze, Sir. Będę w pogotowiu."); return
+        }
+        notify("Myślę (w telefonie)…")
+        val reply = try { phoneBrain.ask(text) } catch (e: Exception) { "Nie mogę teraz odpowiedzieć: ${e.message}" }
+        EveBus.log("EVE 📱: $reply")
+        notify(reply)
+        speakLocal(reply)
+    }
+
+    /** Głos w telefonie (bez PC): systemowy syntezator mowy, polski; dla Jarvisa niżej. */
+    private fun speakLocal(text: String) {
+        val t = tts
+        if (t == null || text.isBlank()) { done(); return }
+        val male = store.sync?.optBoolean("male") == true
+        t.setPitch(if (male) 0.8f else 1.05f)
+        t.setSpeechRate(1.05f)
+        t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            override fun onStart(id: String?) {}
+            override fun onDone(id: String?) { done() }
+            @Deprecated("old API") override fun onError(id: String?) { done() }
+        })
+        t.speak(text.replace(Regex("[*#_`]"), ""), android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "eve")
     }
 
     private fun play(audio: ByteArray) {
@@ -336,7 +427,10 @@ class EveService : Service() {
         }, 300)
     }
 
-    private fun stopSpeaking() = main.post { try { player?.stop() } catch (_: Exception) {} }
+    private fun stopSpeaking() = main.post {
+        try { player?.stop() } catch (_: Exception) {}
+        try { tts?.stop() } catch (_: Exception) {}
+    }
 
     fun listenNow() {
         if (busy) { stopSpeaking(); done() }

@@ -107,6 +107,14 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val r = withContext(Dispatchers.IO) { EveApi(prefs).sendText(text) }
                     addLog("EVE: ${r.text}")
+                } catch (e: java.io.IOException) {
+                    // PC niedostępny - odpowiada EVE w telefonie
+                    val store = LocalStore(this@MainActivity)
+                    val reply = withContext(Dispatchers.IO) {
+                        runCatching { PhoneBrain(store, PhoneTools(this@MainActivity, store)).ask(text) }
+                            .getOrElse { "Brak połączenia z PC, a telefon nie ma jeszcze danych do pracy samodzielnej." }
+                    }
+                    addLog("EVE 📱: $reply")
                 } catch (e: Exception) { addLog("⚠ ${e.message}") }
             }
         }
