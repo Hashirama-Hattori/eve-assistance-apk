@@ -48,10 +48,34 @@ class PanelActivity : AppCompatActivity() {
                     }
                 }
             }
+            // ---- panel bez PC (assets/offline.html) ----
+            @JavascriptInterface
+            fun history(): String = synchronized(EveBus.history) { org.json.JSONArray(EveBus.history.toList()).toString() }
+
+            @JavascriptInterface
+            fun status(): String = EveBus.lastStatus
+
+            @JavascriptInterface
+            fun ask(text: String) {
+                Thread {
+                    val store = LocalStore(this@PanelActivity)
+                    EveBus.log("Ty: $text")
+                    val reply = runCatching { PhoneBrain(store, PhoneTools(this@PanelActivity, store)).ask(text) }
+                        .getOrElse { "Nie mogę teraz odpowiedzieć: ${it.message}" }
+                    EveBus.log("EVE 📱: $reply")
+                    EveService.instance?.sayLocal(reply)
+                }.start()
+            }
         }, "EVEApp")
         var injected = false
         web.webViewClient = object : WebViewClient() {
+            // PC niedostępny -> panel w wersji telefonowej (rdzeń + rozmowa z EVE w telefonie)
+            override fun onReceivedError(view: WebView, req: android.webkit.WebResourceRequest, err: android.webkit.WebResourceError) {
+                if (req.isForMainFrame) view.loadUrl("file:///android_asset/offline.html")
+            }
+
             override fun onPageFinished(view: WebView, url: String?) {
+                if (url?.startsWith("file:") == true) return
                 if (!injected) {   // kod dostępu z ustawień aplikacji - bez wpisywania
                     injected = true
                     val t = JSONObject.quote(prefs.token)
@@ -59,6 +83,10 @@ class PanelActivity : AppCompatActivity() {
                 }
             }
         }
-        web.loadUrl(prefs.serverUrl)
+        // szybkie sprawdzenie PC: jest - pełny panel; nie ma - panel telefonu
+        Thread {
+            val ok = EveApi(prefs).check() == null
+            runOnUiThread { web.loadUrl(if (ok) prefs.serverUrl else "file:///android_asset/offline.html") }
+        }.start()
     }
 }

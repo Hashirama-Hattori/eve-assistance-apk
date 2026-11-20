@@ -58,6 +58,8 @@ class EveService : Service() {
     // praca bez PC
     private lateinit var store: LocalStore
     private lateinit var phoneBrain: PhoneBrain
+    private lateinit var briefing: PhoneBriefing
+    @Volatile private var ttsReady = false
     private var tts: android.speech.tts.TextToSpeech? = null
     @Volatile private var pcOnline = true
 
@@ -68,22 +70,30 @@ class EveService : Service() {
         prefs = Prefs(this)
         api = EveApi(prefs)
         store = LocalStore(this)
-        phoneBrain = PhoneBrain(store, PhoneTools(this, store))
+        val phoneTools = PhoneTools(this, store)
+        phoneBrain = PhoneBrain(store, phoneTools)
+        briefing = PhoneBriefing(this, store, phoneBrain, phoneTools)
         tts = android.speech.tts.TextToSpeech(this) { st ->
-            if (st == android.speech.tts.TextToSpeech.SUCCESS) tts?.language = java.util.Locale("pl", "PL")
+            if (st == android.speech.tts.TextToSpeech.SUCCESS) { tts?.language = java.util.Locale("pl", "PL"); ttsReady = true }
         }
         instance = this
     }
 
     /** Co 20 minut (i po każdym powrocie PC): świeże dane z PC + oddanie tego, co działo się bez niego. */
     private fun syncLoop() = scope.launch {
+        var first = true
         while (running) {
             val err = store.pull(prefs)
             if (err == null) {
                 store.push(prefs)
                 if (!pcOnline) EveBus.log("🖥 PC znowu dostępny – wracam do pełnej EVE")
                 pcOnline = true
+            } else if (first && store.hasSync()) {
+                pcOnline = false
+                EveBus.log("📱 PC niedostępny – działam w telefonie")
+                if (briefing.due()) phoneBriefing()
             }
+            first = false
             kotlinx.coroutines.delay(20 * 60_000L)
         }
     }
@@ -344,6 +354,24 @@ class EveService : Service() {
 
     // ---------- praca bez PC ----------
 
+    /** Dla panelu bez PC: przeczytaj na głos odpowiedź wpisaną z klawiatury. */
+    fun sayLocal(text: String) = main.post { speakLocal(text, final = false) }
+
+    /** Powitanie od razu, potem przegląd dnia i pytanie na koniec (jak na PC). */
+    private suspend fun phoneBriefing() {
+        for (i in 0 until 30) { if (ttsReady) break; kotlinx.coroutines.delay(100) }
+        busy = true
+        val hello = briefing.greeting()
+        EveBus.log("EVE 📱: $hello")
+        speakLocal(hello, final = false)
+        val body = try { briefing.build() } catch (e: Exception) { "" }
+        val text = (body + " " + briefing.closing()).trim()
+        EveBus.log("EVE 📱: $text")
+        notify(text)
+        startConversation()   // po przeglądzie można od razu odpowiedzieć, bez „Iwi”
+        speakLocal(text, add = true)
+    }
+
     private fun transcribe(audio: ByteArray): String? {
         val stt = store.sync?.optJSONObject("stt") ?: return null
         val key = stt.optString("api_key")
@@ -385,18 +413,20 @@ class EveService : Service() {
     }
 
     /** Głos w telefonie (bez PC): systemowy syntezator mowy, polski; dla Jarvisa niżej. */
-    private fun speakLocal(text: String) {
+    private fun speakLocal(text: String, final: Boolean = true, add: Boolean = false) {
         val t = tts
-        if (t == null || text.isBlank()) { done(); return }
+        if (t == null || text.isBlank()) { if (final) done(); return }
         val male = store.sync?.optBoolean("male") == true
         t.setPitch(if (male) 0.8f else 1.05f)
         t.setSpeechRate(1.05f)
         t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
             override fun onStart(id: String?) {}
-            override fun onDone(id: String?) { done() }
-            @Deprecated("old API") override fun onError(id: String?) { done() }
+            override fun onDone(id: String?) { if (id == "eve-final") done() }
+            @Deprecated("old API") override fun onError(id: String?) { if (id == "eve-final") done() }
         })
-        t.speak(text.replace(Regex("[*#_`]"), ""), android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "eve")
+        t.speak(text.replace(Regex("[*#_`]"), ""),
+            if (add) android.speech.tts.TextToSpeech.QUEUE_ADD else android.speech.tts.TextToSpeech.QUEUE_FLUSH,
+            null, if (final) "eve-final" else "eve-part")
     }
 
     private fun play(audio: ByteArray) {

@@ -12,11 +12,17 @@ import java.util.Locale
  */
 class PhoneBrain(private val store: LocalStore, private val tools: PhoneTools) {
 
+    companion object {
+        /** Typowe polecenia do asystentki na początku zdania - takie zdanie zawsze jest do EVE. */
+        val COMMAND = Regex("(?i)^\\s*(proszę |możesz |czy możesz )?(włącz|wyłącz|puść|zatrzymaj|sprawdź|pokaż|powiedz|przeczytaj|znajdź|" +
+            "wyszukaj|zapisz|zapamiętaj|przypomnij|ustaw|dodaj|otwórz|zrób|policz|przetłumacz|streść|podgłoś|ścisz|przycisz|zmień|przełącz)\\b")
+    }
+
     private val cooldown = HashMap<String, Long>()
     var lastBrain = ""
         private set
 
-    private fun systemPrompt(): String {
+    fun systemPrompt(): String {
         val s = store.sync ?: JSONObject()
         val mem = store.localMemories()
         val now = SimpleDateFormat("EEEE, d MMMM yyyy, 'godzina' HH:mm", Locale("pl", "PL")).format(Date())
@@ -30,7 +36,7 @@ class PhoneBrain(private val store: LocalStore, private val tools: PhoneTools) {
             (if (mem.isNotEmpty()) "\nZapisane na telefonie:\n" + mem.joinToString("\n") { "- $it" } else "")
     }
 
-    private fun call(messages: JSONArray, withTools: Boolean, maxTokens: Int? = null): JSONObject {
+    fun call(messages: JSONArray, withTools: Boolean, maxTokens: Int? = null): JSONObject {
         val providers = store.sync?.optJSONArray("providers") ?: throw IllegalStateException("Brak danych z PC")
         var last: Exception? = null
         for (i in 0 until providers.length()) {
@@ -41,8 +47,10 @@ class PhoneBrain(private val store: LocalStore, private val tools: PhoneTools) {
                 val body = JSONObject().put("model", p.getString("model")).put("messages", messages)
                 if (withTools) body.put("tools", tools.schemas()).put("tool_choice", "auto")
                 if (!p.isNull("temperature")) body.put("temperature", p.getDouble("temperature"))
-                if (!p.isNull("max_tokens")) body.put("max_tokens", p.getInt("max_tokens"))
-                if (maxTokens != null && !p.getString("model").contains("gpt-oss")) body.put("max_tokens", maxTokens)
+                val openai = p.getString("base_url").contains("api.openai.com")
+                val tokKey = if (openai) "max_completion_tokens" else "max_tokens"  // nowe modele OpenAI nie znają max_tokens
+                if (!p.isNull("max_tokens")) body.put(tokKey, p.getInt("max_tokens"))
+                if (maxTokens != null && !openai && !p.getString("model").contains("gpt-oss")) body.put(tokKey, maxTokens)
                 p.optJSONObject("params")?.let { pr -> pr.keys().forEach { k -> body.put(k, pr.get(k)) } }
                 val url = p.getString("base_url").trimEnd('/') + "/chat/completions"
                 val r = Net.postJson(url, body, mapOf("Authorization" to "Bearer ${p.getString("api_key")}"), 60000)
@@ -94,6 +102,7 @@ class PhoneBrain(private val store: LocalStore, private val tools: PhoneTools) {
         val lastUser = if (h.length() > 1) h.getJSONObject(h.length() - 2).optString("content") else ""
         if (lastReply.isNotEmpty() && lastReply.lowercase().contains(t.lowercase())) return false  // echo
         if (lastReply.trim().endsWith("?") && t.split(" ").size <= 4) return true
+        if (COMMAND.containsMatchIn(t)) return true
         val prompt = "Mikrofon telefonu słyszy wszystko w pokoju. Ostatnie pytanie użytkownika do asystentki: \"${lastUser.take(200)}\". " +
             "Jej odpowiedź: \"${lastReply.take(300)}\". Nowa wypowiedź: \"${t.take(300)}\". " +
             "Czy jest skierowana DO asystentki (polecenie, pytanie, dalszy ciąg rozmowy z nią)? Odpowiedz jednym słowem: TAK albo NIE."

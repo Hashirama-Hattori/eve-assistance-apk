@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>EVE</title>
+<style>
+  :root { --bg:#04070c; --cyan:#5fd4ff; --cyan2:#a9ecff; --dim:#6f8ca0; --line:rgba(95,212,255,.18); --text:#cfe9f5; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:"Segoe UI", Roboto, sans-serif; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px 8px; }
+  .logo { letter-spacing:.6em; color:var(--cyan); font-size:20px; }
+  .mode { font-size:10px; letter-spacing:.18em; color:#ffb547; border:1px solid rgba(255,181,71,.35); padding:4px 8px; border-radius:20px; }
+  .core { position:relative; height:42vh; display:flex; align-items:center; justify-content:center; }
+  #orb { width:min(80vw, 320px); height:min(80vw, 320px); }
+  #status { position:absolute; bottom:4px; width:100%; text-align:center; font-size:11px; letter-spacing:.2em; color:var(--dim); }
+  #chat { flex:1; overflow-y:auto; padding:10px 14px; display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--line); }
+  .m { max-width:86%; padding:9px 12px; border-radius:12px; font-size:14px; line-height:1.4; white-space:pre-wrap; }
+  .u { align-self:flex-end; background:rgba(95,212,255,.12); border:1px solid var(--line); }
+  .e { align-self:flex-start; background:#0a1420; border:1px solid rgba(95,212,255,.25); }
+  .e::before { content:"EVE"; display:block; font-size:9px; letter-spacing:.25em; color:var(--cyan); margin-bottom:3px; }
+  .s { align-self:center; font-size:11px; color:var(--dim); text-align:center; }
+  form { display:flex; gap:8px; padding:10px 12px 14px; border-top:1px solid var(--line); }
+  input { flex:1; background:#08111b; border:1px solid var(--line); color:var(--text); border-radius:12px; padding:12px; font-size:15px; outline:none; }
+  button { background:none; border:1px solid rgba(95,212,255,.4); color:var(--cyan); border-radius:12px; width:48px; font-size:18px; }
+</style></head>
+<body>
+<header><div class="logo">E·V·E</div><div class="mode">TRYB TELEFONU · PC WYŁĄCZONY</div></header>
+<div class="core"><canvas id="orb"></canvas><div id="status">dotknij rdzenia i mów</div></div>
+<div id="chat"></div>
+<form id="f"><button type="button" id="mic">🎙</button><input id="t" placeholder="Napisz do EVE…" autocomplete="off"><button>➤</button></form>
+<script>
+const $ = id => document.getElementById(id);
+const bridge = window.EVEApp;
+// ---------- rdzeń: obracająca się sfera z punktów ----------
+const cv = $('orb'), g = cv.getContext('2d'), DPR = window.devicePixelRatio || 1;
+function size() { const r = cv.getBoundingClientRect(); cv.width = r.width * DPR; cv.height = r.height * DPR; }
+size(); addEventListener('resize', size);
+const N = 260, pts = [];
+for (let i = 0; i < N; i++) { const y = 1 - 2 * (i + .5) / N, r = Math.sqrt(1 - y * y), a = i * Math.PI * (3 - Math.sqrt(5));
+  pts.push([r * Math.cos(a), y, r * Math.sin(a), Math.random()]); }
+let rot = 0, energy = .3, col = [95, 212, 255];
+function pulse(c) { energy = 1; col = c || [95, 212, 255]; }
+function frame(t) {
+  const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) / 2;
+  energy = Math.max(.3, energy * .985); rot += .004 + .02 * energy;
+  g.clearRect(0, 0, W, H);
+  const gr = g.createRadialGradient(cx, cy, 0, cx, cy, R * .7);
+  gr.addColorStop(0, `rgba(${col},${.25 + .3 * energy})`); gr.addColorStop(1, 'rgba(4,8,14,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R * .7, 0, 7); g.fill();
+  g.strokeStyle = `rgba(${col},.35)`; g.lineWidth = 1.5 * DPR;
+  for (let k = 0; k < 4; k++) { const b = t / 1500 + k * Math.PI / 2; g.beginPath(); g.arc(cx, cy, R * .93, b, b + .9); g.stroke(); }
+  const ca = Math.cos(rot), sa = Math.sin(rot), ct = Math.cos(.35), st = Math.sin(.35), rs = R * .55;
+  for (const [x, y, z, ph] of pts) {
+    const x1 = x * ca + z * sa, z1 = -x * sa + z * ca, y1 = y * ct - z1 * st, z2 = y * st + z1 * ct, d = (z2 + 1) / 2;
+    const tw = .6 + .4 * Math.sin(t / 250 + ph * 6.28) * energy;
+    g.fillStyle = `rgba(${col},${(.15 + .8 * d * tw).toFixed(2)})`;
+    g.beginPath(); g.arc(cx + x1 * rs, cy + y1 * rs, (1 + 2 * d) * DPR, 0, 7); g.fill();
+  }
+  const core = g.createRadialGradient(cx, cy, 0, cx, cy, R * .18);
+  core.addColorStop(0, `rgba(255,255,255,${.5 + .5 * energy})`); core.addColorStop(1, `rgba(${col},0)`);
+  g.fillStyle = core; g.beginPath(); g.arc(cx, cy, R * .18, 0, 7); g.fill();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+cv.onclick = $('mic').onclick = () => { bridge && bridge.listen(); pulse([255, 77, 106]); $('status').textContent = 'słucham…'; };
+// ---------- rozmowa (ta sama co w aplikacji) ----------
+let shown = '';
+function render() {
+  if (!bridge) return;
+  const h = JSON.parse(bridge.history());
+  const key = h.join('\n'); if (key === shown) return;
+  const fresh = h.length && h[h.length - 1] !== shown.split('\n').pop();
+  shown = key;
+  $('chat').innerHTML = '';
+  h.slice(-40).forEach(line => {
+    const d = document.createElement('div');
+    if (line.startsWith('Ty:')) { d.className = 'm u'; d.textContent = line.slice(3).trim(); }
+    else if (line.startsWith('EVE')) { d.className = 'm e'; d.textContent = line.replace(/^EVE[^:]*:\s*/, ''); }
+    else if (line.startsWith('🔧')) { d.className = 's'; d.textContent = line; }
+    else return;
+    $('chat').appendChild(d);
+  });
+  $('chat').scrollTop = 1e9;
+  if (fresh) { pulse(); $('status').textContent = bridge.status(); }
+}
+setInterval(render, 800); render();
+$('f').onsubmit = e => { e.preventDefault(); const v = $('t').value.trim(); if (!v || !bridge) return;
+  $('t').value = ''; bridge.ask(v); pulse([179, 140, 255]); $('status').textContent = 'myślę…'; };
+</script>
+</body></html>
