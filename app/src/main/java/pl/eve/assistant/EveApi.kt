@@ -12,13 +12,17 @@ import java.nio.ByteOrder
 class EveApi(private val prefs: Prefs) {
 
     data class Reply(val user: String, val text: String, val audio: ByteArray?, val action: String?,
-                     val spokenOn: String = "phone")
+                     val spokenOn: String = "phone", val ignored: Boolean = false, val speakSeconds: Double = 0.0)
 
     /** Wysyła nagranie (PCM 16 kHz mono) - EVE sama zamienia mowę na tekst i odpowiada. */
-    fun sendVoice(pcm: ByteArray): Reply {
+    fun sendVoice(pcm: ByteArray, conversation: Boolean = false, heard: String = ""): Reply {
         val wav = pcmToWav(pcm, 16000)
         val boundary = "----EVE" + System.currentTimeMillis()
         val conn = open("/api/voice")
+        if (conversation) {  // serwer sam oceni, czy to było do EVE (na podstawie tego, co usłyszał telefon)
+            conn.setRequestProperty("X-Eve-Conversation", "1")
+            conn.setRequestProperty("X-Eve-Heard", java.net.URLEncoder.encode(heard, "UTF-8"))
+        }
         conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         DataOutputStream(conn.outputStream).use { out ->
             out.writeBytes("--$boundary\r\n")
@@ -76,7 +80,7 @@ class EveApi(private val prefs: Prefs) {
             android.util.Base64.decode(audioB64, android.util.Base64.DEFAULT) else null
         return Reply(j.optString("user"), j.optString("reply"), audio,
             j.optString("action").takeIf { it.isNotEmpty() && it != "null" },
-            j.optString("spoken_on", "phone"))
+            j.optString("spoken_on", "phone"), j.optBoolean("ignored", false), j.optDouble("speak_seconds", 0.0))
     }
 
     companion object {

@@ -79,6 +79,14 @@ class MainActivity : AppCompatActivity() {
             addLog(if (prefs.speakOn == "pc") "Odpowiedzi głosem na komputerze" else "Odpowiedzi głosem na telefonie")
             if (EveService.isRunning) startService(Intent(this, EveService::class.java).setAction(EveService.ACTION_REFRESH))
         }
+        val conv = findViewById<Button>(R.id.conversation)
+        conv.text = prefs.conversationLabel()
+        conv.setOnClickListener {
+            prefs.conversation = !prefs.conversation
+            conv.text = prefs.conversationLabel()
+            addLog(if (prefs.conversation) "Ciągła rozmowa włączona: po „Iwi” mów bez słowa-klucza przez 20 min"
+                   else "Ciągła rozmowa wyłączona: każde polecenie zaczynaj od „Iwi”")
+        }
         findViewById<Button>(R.id.panel).setOnClickListener {
             startActivity(Intent(this, PanelActivity::class.java))
         }

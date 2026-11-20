@@ -51,6 +51,7 @@ class EveService : Service() {
     @Volatile private var running = false
     @Volatile private var busy = false            // EVE myśli albo mówi - nie słuchamy siebie
     @Volatile private var awaitUntil = 0L        // po samym "Iwi" czekamy na polecenie
+    @Volatile private var convUntil = 0L         // ciągła rozmowa trwa do tej chwili (potem spoczynek)
     @Volatile private var resetRecognizer = false
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -125,6 +126,7 @@ class EveService : Service() {
             while (running) {
                 val n = rec.read(buf, 0, buf.size)
                 if (n <= 0) continue
+                if (convUntil > 0 && System.currentTimeMillis() > convUntil) endConversation("20 minut ciszy")
                 if (busy) { utterance.reset(); continue }
                 if (resetRecognizer) { recognizer.reset(); utterance.reset(); resetRecognizer = false }
                 utterance.write(buf, 0, n)
@@ -157,11 +159,13 @@ class EveService : Service() {
         when {
             wake != null && wake.second.length >= 3 -> {
                 EveBus.log("🎙 $text")
+                startConversation()
                 send(audio)
             }
             wake != null -> {               // samo "Iwi" - czekamy na polecenie
                 EveBus.log("🎙 (Iwi) słucham…")
                 beep()
+                startConversation()
                 awaitUntil = now + 8000
                 resetRecognizer = true
             }
@@ -170,6 +174,7 @@ class EveService : Service() {
                 EveBus.log("🎙 $text")
                 send(audio)
             }
+            inConversation() -> send(audio, conversation = true, heard = text)  // serwer oceni, czy to do EVE
             else -> EveBus.heard(text)      // rozmowa nie do EVE - tylko podgląd
         }
     }
@@ -208,17 +213,50 @@ class EveService : Service() {
         return iwiSound.matches(w)
     }
 
-    private fun send(audio: ByteArray) {
+    // ---------- ciągła rozmowa ----------
+
+    private fun inConversation() = convUntil > System.currentTimeMillis()
+
+    private fun startConversation() {
+        if (!prefs.conversation) return
+        val first = !inConversation()
+        convUntil = System.currentTimeMillis() + prefs.conversationMinutes * 60_000L
+        if (first) EveBus.log("💬 Rozmowa – mów śmiało, bez „Iwi” (spoczynek po ${prefs.conversationMinutes} min ciszy)")
+    }
+
+    private fun endConversation(why: String) {
+        if (convUntil == 0L) return
+        convUntil = 0
+        EveBus.log("💤 Spoczynek ($why). Powiedz „Iwi”, żeby zacząć znowu.")
+        notify(idleText())
+        try { ToneGenerator(AudioManager.STREAM_MUSIC, 50).startTone(ToneGenerator.TONE_PROP_NACK, 160) } catch (_: Exception) {}
+    }
+
+    private fun idleText() = if (inConversation()) "Rozmowa trwa – mów śmiało" else "Słucham – powiedz „Iwi”"
+
+    private fun send(audio: ByteArray, conversation: Boolean = false, heard: String = "") {
         busy = true
-        notify("Myślę…")
+        if (!conversation) notify("Myślę…")
         scope.launch {
             try {
-                val r = api.sendVoice(audio)
+                val r = api.sendVoice(audio, conversation, heard)
+                if (r.ignored) {            // to nie było do EVE - słuchamy dalej po cichu
+                    EveBus.heard("$heard  (nie do mnie)")
+                    busy = false
+                    return@launch
+                }
+                startConversation()         // każda rozmowa z EVE przedłuża czas do spoczynku
+                if (r.action == "end_conversation") endConversation("na Twoje polecenie")
                 if (r.action == "stop") stopSpeaking()
                 if (r.user.isNotEmpty()) EveBus.log("Ty: ${r.user}")
                 if (r.text.isNotEmpty()) EveBus.log("EVE: ${r.text}" + if (r.spokenOn == "pc") "  (🖥 mówi na PC)" else "")
-                notify(r.text.ifEmpty { "Słucham – powiedz „Iwi”" })
-                if (r.audio != null) play(r.audio) else done()
+                notify(r.text.ifEmpty { idleText() })
+                when {
+                    r.audio != null -> play(r.audio)
+                    // EVE mówi z głośników PC - nie słuchamy, dopóki mówi (inaczej telefon usłyszy jej głos)
+                    r.spokenOn == "pc" -> main.postDelayed({ done() }, (r.speakSeconds * 1000).toLong())
+                    else -> done()
+                }
             } catch (e: Exception) {
                 EveBus.log("⚠ ${e.message}")
                 notify("Brak połączenia z EVE")
@@ -251,7 +289,7 @@ class EveService : Service() {
         main.postDelayed({
             resetRecognizer = true
             busy = false
-            notify("Słucham – powiedz „Iwi”")
+            notify(idleText())
         }, 300)
     }
 
@@ -260,6 +298,7 @@ class EveService : Service() {
     fun listenNow() {
         if (busy) { stopSpeaking(); done() }
         beep()
+        startConversation()
         awaitUntil = System.currentTimeMillis() + 8000
         resetRecognizer = true
         EveBus.log("🎙 słucham…")

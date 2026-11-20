@@ -34,6 +34,17 @@ class Prefs(context: Context) {
         return speakOn
     }
 
+    /** Ciągła rozmowa: po "Iwi" słucham dalej bez słowa-klucza, aż do 20 min ciszy. */
+    var conversation: Boolean
+        get() = sp.getBoolean("conversation", true)
+        set(v) = sp.edit().putBoolean("conversation", v).apply()
+
+    var conversationMinutes: Int
+        get() = sp.getInt("conversation_minutes", 20)
+        set(v) = sp.edit().putInt("conversation_minutes", v).apply()
+
+    fun conversationLabel(): String = if (conversation) "💬 Ciągła rozmowa: WŁ" else "💬 Ciągła rozmowa: WYŁ"
+
     fun speakLabel(): String = if (speakOn == "pc") "🖥 Odpowiada: KOMPUTER" else "📱 Odpowiada: TELEFON"
 
     fun wakeList(): List<String> =

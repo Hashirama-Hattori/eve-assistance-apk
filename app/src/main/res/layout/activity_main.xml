@@ -32,6 +32,9 @@
     <Button android:id="@+id/speakOn" style="@style/EveButton" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:text="📱 Odpowiada: TELEFON" />
 
+    <Button android:id="@+id/conversation" style="@style/EveButton" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="💬 Ciągła rozmowa: WŁ" />
+
     <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:layout_marginTop="8dp" android:background="@color/panel" android:padding="10dp">
         <TextView android:id="@+id/log" android:layout_width="match_parent" android:layout_height="wrap_content"
