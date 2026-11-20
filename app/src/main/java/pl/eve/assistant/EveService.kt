@@ -117,6 +117,11 @@ class EveService : Service() {
         val minBuf = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, 8192))
+        // wbudowane wzmocnienie telefonu (jeśli ma) + nasze programowe - mowa z odległości jest cicha
+        try {
+            if (android.media.audiofx.AutomaticGainControl.isAvailable())
+                android.media.audiofx.AutomaticGainControl.create(rec.audioSessionId)?.enabled = true
+        } catch (_: Exception) {}
         val recognizer = Recognizer(m, rate.toFloat())
         val buf = ByteArray(4096)
         val utterance = ByteArrayOutputStream()
@@ -126,6 +131,7 @@ class EveService : Service() {
             while (running) {
                 val n = rec.read(buf, 0, buf.size)
                 if (n <= 0) continue
+                amplify(buf, n, prefs.micGain)
                 if (convUntil > 0 && System.currentTimeMillis() > convUntil) endConversation("20 minut ciszy")
                 if (busy) { utterance.reset(); continue }
                 if (resetRecognizer) { recognizer.reset(); utterance.reset(); resetRecognizer = false }
@@ -150,6 +156,43 @@ class EveService : Service() {
             rec.release()
             recognizer.close()
         }
+    }
+
+    /** Programowe wzmocnienie z miękkim ogranicznikiem (głośne dźwięki nie przesterowują). */
+    private fun amplify(b: ByteArray, n: Int, gain: Float) {
+        if (gain <= 1.01f) return
+        var i = 0
+        while (i + 1 < n) {
+            val s = ((b[i + 1].toInt() shl 8) or (b[i].toInt() and 0xFF)).toShort() / 32768f
+            var v = s * gain
+            v = if (v > 0.6f) 0.6f + (1 - 0.6f) * kotlin.math.tanh((v - 0.6f) / 0.4f)
+                else if (v < -0.6f) -0.6f - (1 - 0.6f) * kotlin.math.tanh((-v - 0.6f) / 0.4f) else v
+            val o = (v * 32767).toInt().coerceIn(-32768, 32767)
+            b[i] = (o and 0xFF).toByte(); b[i + 1] = ((o shr 8) and 0xFF).toByte()
+            i += 2
+        }
+    }
+
+    /** Wyrównanie głośności całego zdania przed wysłaniem (do ok. 90% skali, maks. 4x). */
+    private fun normalize(pcm: ByteArray): ByteArray {
+        var peak = 1
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val s = kotlin.math.abs(((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt())
+            if (s > peak) peak = s
+            i += 2
+        }
+        val g = minOf(4f, 0.9f * 32767 / peak)
+        if (g in 0.95f..1.05f) return pcm
+        val out = pcm.copyOf()
+        i = 0
+        while (i + 1 < out.size) {
+            val s = ((out[i + 1].toInt() shl 8) or (out[i].toInt() and 0xFF)).toShort()
+            val o = (s * g).toInt().coerceIn(-32768, 32767)
+            out[i] = (o and 0xFF).toByte(); out[i + 1] = ((o shr 8) and 0xFF).toByte()
+            i += 2
+        }
+        return out
     }
 
     /** Całe zdanie usłyszane offline. Decydujemy, czy to było do EVE. */
@@ -239,7 +282,7 @@ class EveService : Service() {
         if (!conversation) notify("Myślę…")
         scope.launch {
             try {
-                val r = api.sendVoice(audio, conversation, heard)
+                val r = api.sendVoice(normalize(audio), conversation, heard)
                 if (r.ignored) {            // to nie było do EVE - słuchamy dalej po cichu
                     EveBus.heard("$heard  (nie do mnie)")
                     busy = false

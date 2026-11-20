@@ -87,6 +87,13 @@ class MainActivity : AppCompatActivity() {
             addLog(if (prefs.conversation) "Ciągła rozmowa włączona: po „Iwi” mów bez słowa-klucza przez 20 min"
                    else "Ciągła rozmowa wyłączona: każde polecenie zaczynaj od „Iwi”")
         }
+        val mic = findViewById<Button>(R.id.micGain)
+        mic.text = prefs.micLabel()
+        mic.setOnClickListener {
+            prefs.nextMicGain()
+            mic.text = prefs.micLabel()
+            addLog("Czułość mikrofonu: ${prefs.micGain}x (działa od razu)")
+        }
         findViewById<Button>(R.id.panel).setOnClickListener {
             startActivity(Intent(this, PanelActivity::class.java))
         }

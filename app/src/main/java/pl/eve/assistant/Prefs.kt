@@ -45,6 +45,22 @@ class Prefs(context: Context) {
 
     fun conversationLabel(): String = if (conversation) "💬 Ciągła rozmowa: WŁ" else "💬 Ciągła rozmowa: WYŁ"
 
+    /** Wzmocnienie mikrofonu (1-4x) - żeby EVE słyszała z drugiego końca pokoju. */
+    var micGain: Float
+        get() = sp.getFloat("mic_gain", 2.5f)
+        set(v) = sp.edit().putFloat("mic_gain", v).apply()
+
+    fun nextMicGain(): Float {
+        val steps = floatArrayOf(1f, 1.5f, 2.5f, 3.5f, 5f)
+        val i = steps.indexOfFirst { it > micGain + 0.01f }
+        micGain = if (i < 0) steps[0] else steps[i]
+        return micGain
+    }
+
+    fun micLabel(): String = "🎚 Czułość mikrofonu: " + when {
+        micGain < 1.2f -> "normalna"; micGain < 2f -> "podwyższona"; micGain < 3f -> "wysoka"
+        micGain < 4f -> "bardzo wysoka"; else -> "maksymalna" } + " (${micGain}x)"
+
     fun speakLabel(): String = if (speakOn == "pc") "🖥 Odpowiada: KOMPUTER" else "📱 Odpowiada: TELEFON"
 
     fun wakeList(): List<String> =
